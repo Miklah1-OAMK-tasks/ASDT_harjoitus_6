@@ -1,6 +1,8 @@
 import tkinter as tk
 import random
 import threading
+import numpy as np
+import time
 
 # SUUNNITELMA TURVALLISESTA UIMA-ALTAASTA (1 PISTETTÄ) ALKAA TÄSTÄ
 
@@ -21,8 +23,8 @@ uima_allas = [[0 for _ in range(60)] for _ in range(20)]
 oja_ernesti = [[1] for _ in range(100)]
 oja_kernesti = [[1] for _ in range(100)]
 
-# Määritellään metsäalue (20x20), täynnä ykkösiä (metsä)
-metsa = [[1 for _ in range(60)] for _ in range(20)]
+# Määritellään metsäalue (20x60) numpytaulukkona, täynnä ykkösiä (metsä)
+metsa = np.ones((20, 60), dtype=int)
 
 # Funktio, joka piirtää uima-altaan
 def piirra_uima_allas():
@@ -51,12 +53,20 @@ def piirra_oja(oja, x_alku, y_alku):
 # Funktio, joka piirtää metsäalueen
 def piirra_metsa():
     ruudun_koko = 5  # Yhden ruudun koko 5x5 pikseliä
-    for i in range(20): # luodaan taulukko 20x60
+    for i in range(20):  # Piirretään vain tarvittavat ruudut
         for j in range(60):
-            x0, y0 = j * ruudun_koko, i * ruudun_koko # Ruudun vasemman yläkulman koordinaatit
-            x1, y1 = x0 + ruudun_koko, y0 + ruudun_koko # Ruudun oikean alakulman koordinaatit
-            väri = "green" if metsa[i][j] == 1 else "brown"  # Metsä = vihreä, muu hiekka = keltainen
-            autiosaari.create_rectangle(x0 + 250, y0 + 400, x1 + 250, y1 + 400, fill=väri, outline='green') # Piirretään metsä
+            if metsa[i][j] == 1:  # Piirretään vain metsäruudut
+                x0, y0 = j * ruudun_koko, i * ruudun_koko
+                x1, y1 = x0 + ruudun_koko, y0 + ruudun_koko
+                autiosaari.create_rectangle(x0 + 250, y0 + 400, x1 + 250, y1 + 400, fill="green", outline='green')
+
+def paivita_metsa(i, j, arvo):
+    metsa[i][j] = arvo
+    ruudun_koko = 5
+    x0, y0 = j * ruudun_koko, i * ruudun_koko
+    x1, y1 = x0 + ruudun_koko, y0 + ruudun_koko
+    väri = "green" if arvo == 1 else "brown"
+    autiosaari.create_rectangle(x0 + 250, y0 + 400, x1 + 250, y1 + 400, fill=väri, outline='green')
 
 # Piirretään aluksi uima-allas ja ojat (täynnä hiekkaa)
 piirra_uima_allas()
@@ -73,20 +83,21 @@ piirra_metsa()  # Piirretään metsäalue
 apinoiden_tiedot = []   # Lista apinoiden tiedoista 
 
 def luo_apina():
-    for i in range(5):  # Lisätään 5 apinaa
+    for i in range(10):  # Lisätään 5 apinaa
         apina_x = random.randint(0, 59)  # Arvotaan apinan x-koordinaatti
         apina_y = random.randint(0, 19)  # Arvotaan apinan y-koordinaatti
         metsa[apina_y][apina_x] = 0      # Asetetaan apina metsään
-        piirra_metsa()                   # Päivitetään metsän piirros
+        paivita_metsa(apina_y, apina_x, 0)  # Päivitetään metsä
 
 def e_hakee_apinan():
     global apinoiden_tiedot
     # Etsitään satunnainen y-koordinaatti
     y_koordinaatti = random.randint(0, 249)
-    
-    while [y_koordinaatti] in apinoiden_tiedot:
+    y_koordinaatti_oja = round(y_koordinaatti // 2.5)
+    while [y_koordinaatti_oja, y_koordinaatti] in apinoiden_tiedot:
         y_koordinaatti = random.randint(0, 249)
-    
+        y_koordinaatti_oja = round(y_koordinaatti // 2.5)
+        
     # Määritetään x-koordinaatti Ernestin ojan varrelle
     x_koordinaatti = 0
 
@@ -96,21 +107,48 @@ def e_hakee_apinan():
             if metsa[i][j] == 0:
                 metsa[i][j] = 1
                 x_koordinaatti = j
+                paivita_metsa(i, j, 1)  
                 autiosaari.create_oval(245, y_koordinaatti, 250, y_koordinaatti + 5, fill='brown', outline='brown') 
-                apinoiden_tiedot.append([y_koordinaatti])  
+                apinoiden_tiedot.append([y_koordinaatti_oja, y_koordinaatti])  
+                apinoiden_tiedot_sorted = sorted(apinoiden_tiedot, key=lambda x: x[0])
+                print("Apinoiden tiedot järjestyksessä:", apinoiden_tiedot_sorted)
+                break
+            elif i == 19 and j == 59:
+                print("Metsässä ei ole apinoita!")
                 break
         if x_koordinaatti != 0:
             break
     
-    apinoiden_tiedot_sorted = sorted(apinoiden_tiedot, key=lambda x: x[0])
-    print("Apinoiden tiedot järjestyksessä:", apinoiden_tiedot_sorted)
-    piirra_metsa()  # Päivitetään metsän piirros
-
 def e_apina_kaivaa_ojaa():
     global apinoiden_tiedot
-    for i in range(100):
-        oja_ernesti[i][0] = 0
-        piirra_oja(oja_ernesti, 250, 246)  # Ernestin oja
+    if len(apinoiden_tiedot) == 0:
+        print("Ei apinoita kaivamassa!")
+        return
+    
+    apina_sijainti = apinoiden_tiedot[0]  # Otetaan ensimmäinen apina listasta
+    y_sijainti = apina_sijainti[0]  # Apinan sijainti ojan varrella
+    x_sijainti = 0  # Alussa apina on ojan alussa
+
+    kaivamis_nopeus = 1  # Kaivamisnopeus alkaa yhdestä sekunnista metriä kohti
+    kaivettu_pituus = 0  # Alussa ei ole kaivettu metriäkään
+
+    while kaivettu_pituus < 100:  # Kaivetaan kunnes oja on täyteen kaivettu
+        if oja_ernesti[kaivettu_pituus][0] == 1:  # Jos ojaa ei ole vielä kaivettu tässä kohtaa
+            oja_ernesti[kaivettu_pituus][0] = 0  # Kaiva kohta
+            piirra_oja(oja_ernesti, 250, 246)  # Päivitetään oja
+            print(f"Apina kaivoi kohdan: {kaivettu_pituus}")
+            
+            # Soitetaan kaivamisääniefekti (placeholder-ääni)
+            print("Kaivamisääni!")  # Voit lisätä tähän oikean äänen käyttämällä esimerkiksi Pygamea
+
+            time.sleep(kaivamis_nopeus)  # Apina kaivaa metrin ja pitää tauon
+            kaivettu_pituus += 1  # Siirrytään seuraavaan kohtaan
+
+            # Päivitetään apinan sijainti ojan varrella visuaalisesti
+            autiosaari.create_oval(245, y_sijainti - kaivettu_pituus * 2.5, 250, y_sijainti - (kaivettu_pituus * 2.5) + 5, fill='brown', outline='brown')
+
+            # Väsymys: Kaivaminen hidastuu kaksinkertaiseksi joka kerta
+            kaivamis_nopeus *= 2
     
 
 # Luodaan painike, jolla lisätään apinoita
@@ -122,8 +160,8 @@ ernesti_hakee_apinan = tk.Button(ikkuna, text="Ernesti hakee apinan", command=la
 ernesti_hakee_apinan.place(x=100, y=150)
 
 # Luodaan painike, jolla apina alkaa kaivamaan ojaa
-e_apina_kaivaa_ojaa = tk.Button(ikkuna, text="Apina kaivaa Ernestin ojaa", command=e_apina_kaivaa_ojaa)
-e_apina_kaivaa_ojaa.place(x=100, y=200)
+e_apina_kaivaa_ojaa_btn = tk.Button(ikkuna, text="Apina kaivaa Ernestin ojaa", command=e_apina_kaivaa_ojaa)
+e_apina_kaivaa_ojaa_btn.place(x=100, y=200)
 
 # RAKENTAMISEEN TARVITTAVAN TYÖVOIMAN HANKINTA (2 PISTETTÄ) PÄÄTTYY TÄHÄN
 
